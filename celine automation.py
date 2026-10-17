@@ -1,8 +1,10 @@
 import json
 import os
 from pathlib import Path
+import platform
 import sys
 import threading
+import time
 from datetime import datetime, timezone
 
 import numpy as np
@@ -33,16 +35,100 @@ from PySide6.QtWidgets import (
 )
 
 
-DEFAULT_VST_PATH = (
-    r"C:\Program Files\Common Files\VST3\Celine.vst3"
-    r"\Contents\x86_64-win\Celine.vst3"
-)
 CHUNK_SIZE = 65536
+SETUP_FILENAME = "celine_setup.json"
+
+
+def find_celine_vst3():
+    if platform.system() == "Windows":
+        bundles = [
+            Path(os.environ.get("CommonProgramFiles", r"C:\Program Files\Common Files")) / "VST3" / "Celine.vst3",
+            Path(os.environ.get("CommonProgramW6432", r"C:\Program Files")) / "Common Files" / "VST3" / "Celine.vst3",
+        ]
+        candidates = [
+            bundle / "Contents" / "x86_64-win" / "Celine.vst3"
+            for bundle in bundles
+        ] + bundles
+    elif platform.system() == "Darwin":
+        candidates = [
+            Path("/Library/Audio/Plug-Ins/VST3/Celine.vst3"),
+            Path.home() / "Library/Audio/Plug-Ins/VST3/Celine.vst3",
+        ]
+    else:
+        candidates = []
+    return next((candidate for candidate in candidates if candidate.is_file() or candidate.is_dir()), None)
+
+
 OUTPUT_SAMPLE_RATE = 48000
 NAM_KNOB_MIN = 0.0
 NAM_KNOB_MAX = 10.0
 CELINE_INPUT_DB_MIN = -20.0
 CELINE_INPUT_DB_MAX = 20.0
+
+
+def center_celine_editor_window(stop_event, excluded_window=None):
+    if platform.system() != "Windows":
+        return
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.windll.user32
+    moved_window = False
+    baseline_windows = set()
+
+    def collect_window(window_handle, _):
+        baseline_windows.add(int(window_handle))
+        return True
+
+    user32.EnumWindows(
+        ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)(
+            collect_window
+        ),
+        0,
+    )
+
+    while not stop_event.is_set() and not moved_window:
+        candidate_windows = []
+
+        def find_candidate(window_handle, _):
+            if (
+                user32.IsWindowVisible(window_handle)
+                and window_handle != excluded_window
+                and int(window_handle) not in baseline_windows
+            ):
+                candidate_windows.append(window_handle)
+            return True
+
+        user32.EnumWindows(
+            ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)(
+                find_candidate
+            ),
+            0,
+        )
+        foreground_window = user32.GetForegroundWindow()
+        if (
+            foreground_window
+            and foreground_window != excluded_window
+            and user32.IsWindowVisible(foreground_window)
+        ):
+            candidate_windows.insert(0, foreground_window)
+
+        for window_handle in candidate_windows:
+            if window_handle == excluded_window:
+                continue
+            rect = wintypes.RECT()
+            if user32.GetWindowRect(window_handle, ctypes.byref(rect)):
+                width = rect.right - rect.left
+                height = rect.bottom - rect.top
+                screen_width = user32.GetSystemMetrics(0)
+                screen_height = user32.GetSystemMetrics(1)
+                x = max(0, (screen_width - width) // 2)
+                y = max(0, (screen_height - height) // 2)
+                user32.MoveWindow(window_handle, x, y, width, height, True)
+                moved_window = True
+                break
+        if not moved_window:
+            time.sleep(0.05)
 
 
 def load_audio(path):
@@ -85,6 +171,15 @@ def nam_value_to_celine_input_db(value):
     return CELINE_INPUT_DB_MIN + normalized * (
         CELINE_INPUT_DB_MAX - CELINE_INPUT_DB_MIN
     )
+
+
+def format_duration(seconds):
+    seconds = max(0, int(seconds))
+    minutes, seconds = divmod(seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours:
+        return f"{hours}:{minutes:02d}:{seconds:02d}"
+    return f"{minutes}:{seconds:02d}"
 
 
 def set_celine_parameter(parameter_name, parameter, value, is_nam_value=False):
@@ -168,6 +263,7 @@ def capture_metadata(output):
 
 class WorkerSignals(QObject):
     status = Signal(str)
+    eta = Signal(str)
     capture_progress = Signal(int, int, int, str)
     capture_finished = Signal(int)
     stopped = Signal(str)
@@ -194,6 +290,22 @@ class CelineWorker(QObject):
         entries = project["entries"]
         total = len(entries)
         completed = 0
+        rendered_completed = 0
+        pending_entries = [
+            entry
+            for entry in entries
+            if not (
+                (project_dir / entry["y_path"].replace("/", os.sep)).is_file()
+                and is_valid_capture(project_dir / entry["y_path"].replace("/", os.sep))
+            )
+        ]
+        pending_total = len(pending_entries)
+        render_durations = []
+        self.signals.eta.emit(
+            "Estimated time remaining: calculating..."
+            if pending_total
+            else "Estimated time remaining: 0:00"
+        )
         project_path = project_dir / "capture_project.json"
         data_path = project_dir / "data.json"
         data = create_data_json(project)
@@ -204,6 +316,7 @@ class CelineWorker(QObject):
             output_path = project_dir / entry["y_path"].replace("/", os.sep)
             if output_path.is_file() and is_valid_capture(output_path):
                 entry["status"] = "captured"
+                completed += 1
                 self.signals.capture_finished.emit(row)
                 continue
             split = entry["split"]
@@ -238,12 +351,30 @@ class CelineWorker(QObject):
                         plugin.parameters[assignment["parameter"]],
                         assignment["value"],
                     )
+            capture_started = time.monotonic()
             completed += 1
+            rendered_completed += 1
 
             def update_progress(done, chunks, completed=completed):
                 self.signals.status.emit(
                     f"Rendering {completed}/{total} ({split})... chunk {done}/{chunks}"
                 )
+                if render_durations:
+                    current_fraction = done / chunks if chunks else 0
+                    current_elapsed = time.monotonic() - capture_started
+                    current_estimate = (
+                        current_elapsed / current_fraction
+                        if current_fraction > 0
+                        else 0
+                    )
+                    average_duration = sum(render_durations) / len(render_durations)
+                    remaining = max(0, pending_total - rendered_completed)
+                    seconds = round(remaining * average_duration + max(
+                        0, current_estimate - current_elapsed
+                    ))
+                    self.signals.eta.emit(
+                        f"Estimated time remaining: {format_duration(seconds)}"
+                    )
                 self.signals.capture_progress.emit(
                     row, done, chunks, f"{split.title()} {done}/{chunks}"
                 )
@@ -261,6 +392,12 @@ class CelineWorker(QObject):
                 output,
                 OUTPUT_SAMPLE_RATE,
                 subtype="PCM_24",
+            )
+            render_durations.append(time.monotonic() - capture_started)
+            remaining = max(0, pending_total - rendered_completed)
+            average_duration = sum(render_durations) / len(render_durations)
+            self.signals.eta.emit(
+                f"Estimated time remaining: {format_duration(round(remaining * average_duration))}"
             )
             entry["status"] = "captured"
             entry["captured_at"] = datetime.now(timezone.utc).isoformat()
@@ -291,15 +428,22 @@ class CelineAutomationApp(QMainWindow):
         self.project = None
         self.plugin = None
         self.plugin_parameters = []
-        self.vst_path = QLineEdit(DEFAULT_VST_PATH)
+        self.saved_setup = None
+        self._updating_setup_table = False
+        detected_vst = find_celine_vst3()
+        self.vst_path = str(detected_vst) if detected_vst else None
         self.project_summary = QLabel("No project open.")
+        self.input_status = QLabel("inputTrunc.wav: no project open")
+        self.validation_status = QLabel("validation.wav: no project open")
         self.status = QLabel("Open a project directory to begin.")
+        self.eta_status = QLabel("Estimated time remaining: --")
         self.capture_table = QTableWidget()
         self.capture_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.capture_table.setAlternatingRowColors(True)
         self.capture_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.capture_table.setSortingEnabled(True)
         self.capture_table.horizontalHeader().setStretchLastSection(True)
+        self._set_normal_header_font(self.capture_table)
         self.knob_table = QTableWidget()
         self.knob_table.setColumnCount(4)
         self.knob_table.setHorizontalHeaderLabels(
@@ -307,7 +451,18 @@ class CelineAutomationApp(QMainWindow):
         )
         self.knob_table.setEditTriggers(QTableWidget.AllEditTriggers)
         self.knob_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self._set_normal_header_font(self.knob_table)
         self._build_ui()
+
+    @staticmethod
+    def _set_normal_header_font(table):
+        header_font = table.horizontalHeader().font()
+        header_font.setBold(False)
+        table.horizontalHeader().setFont(header_font)
+        table.horizontalHeader().setStyleSheet(
+            "QHeaderView::section, QTableWidget QHeaderView::section "
+            "{ font-weight: 400; }"
+        )
 
     def _build_ui(self):
         central = QWidget()
@@ -326,10 +481,10 @@ class CelineAutomationApp(QMainWindow):
         project_actions.addWidget(self.project_summary, 1)
         layout.addLayout(project_actions)
 
-        source = QGroupBox("Sources and output")
+        source = QGroupBox("Project audio")
         source_layout = QFormLayout(source)
-        source_layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
-        source_layout.addRow("Celine VST3", self._path_widget(self.vst_path, self._choose_vst))
+        source_layout.addRow("Training input", self.input_status)
+        source_layout.addRow("Validation input", self.validation_status)
         layout.addWidget(source)
 
         setup = QGroupBox("Celine setup")
@@ -338,6 +493,9 @@ class CelineAutomationApp(QMainWindow):
         self.setup_button = QPushButton("Set Up Celine")
         self.setup_button.clicked.connect(self._setup_celine)
         setup_actions.addWidget(self.setup_button)
+        self.reset_setup_button = QPushButton("Reset Celine Setup")
+        self.reset_setup_button.clicked.connect(self._reset_celine_setup)
+        setup_actions.addWidget(self.reset_setup_button)
         setup_actions.addWidget(QLabel("Available plugin knobs"))
         self.knob_count = QSpinBox()
         self.knob_count.setRange(0, 64)
@@ -379,6 +537,7 @@ class CelineAutomationApp(QMainWindow):
         actions.addWidget(self.stop_button)
         layout.addLayout(actions)
         layout.addWidget(self.status)
+        layout.addWidget(self.eta_status)
         self.setCentralWidget(central)
 
     def _path_widget(self, line_edit, callback):
@@ -397,17 +556,11 @@ class CelineAutomationApp(QMainWindow):
             return
         project_dir = Path(path)
         project_path = project_dir / "capture_project.json"
-        required_files = [
-            project_path,
-            project_dir / "inputTrunc.wav",
-            project_dir / "validation.wav",
-        ]
-        missing_files = [file.name for file in required_files if not file.is_file()]
-        if missing_files:
+        if not project_path.is_file():
             QMessageBox.critical(
                 self,
                 "Invalid project",
-                "The selected directory is missing:\n" + "\n".join(missing_files),
+                "The selected directory is missing capture_project.json.",
             )
             return
         try:
@@ -419,9 +572,34 @@ class CelineAutomationApp(QMainWindow):
             return
         self.project_dir = project_dir
         self.project = project
+        self.saved_setup = None
+        self._update_audio_status()
+        setup_path = project_dir / SETUP_FILENAME
+        if setup_path.is_file():
+            try:
+                self.saved_setup = json.loads(setup_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as error:
+                QMessageBox.warning(self, "Setup file unreadable", str(error))
         self._show_capture_table(project)
         if self.plugin_parameters:
-            self._populate_knob_table(self.knob_count.value())
+            if self.saved_setup:
+                self._populate_knob_table()
+                self._apply_saved_setup()
+            else:
+                previous = (
+                    {
+                        item.get("parameter"): {
+                            "captured": bool(item.get("captured", False)),
+                            "capture_knob": item.get("capture_knob", ""),
+                            "static_value": float(item.get("static_value", 5.0)),
+                        }
+                        for item in self.saved_setup.get("parameters", [])
+                    }
+                    if self.saved_setup
+                    else self._collect_setup_parameters()
+                )
+                self._populate_knob_table(self.knob_count.value(), previous)
+        self.render_button.setEnabled(self.plugin is not None and self._inputs_available())
         data_path = project_dir / "data.json"
         if not data_path.exists():
             write_json(data_path, create_data_json(project))
@@ -433,6 +611,25 @@ class CelineAutomationApp(QMainWindow):
             f"{train_count} train + {validation_count} validation captures"
         )
         self.status.setText(f"Opened project: {project_dir}")
+
+    def _update_audio_status(self):
+        if self.project_dir is None:
+            return
+        train_path = self.project_dir / "inputTrunc.wav"
+        validation_path = self.project_dir / "validation.wav"
+        self.input_status.setText(
+            "inputTrunc.wav: found" if train_path.is_file() else "inputTrunc.wav: missing"
+        )
+        self.validation_status.setText(
+            "validation.wav: found" if validation_path.is_file() else "validation.wav: missing"
+        )
+
+    def _inputs_available(self):
+        return (
+            self.project_dir is not None
+            and (self.project_dir / "inputTrunc.wav").is_file()
+            and (self.project_dir / "validation.wav").is_file()
+        )
 
     @staticmethod
     def _validate_project(project):
@@ -468,6 +665,7 @@ class CelineAutomationApp(QMainWindow):
         self.capture_table.clear()
         self.capture_table.setColumnCount(len(headers))
         self.capture_table.setHorizontalHeaderLabels(headers)
+        self._set_normal_header_font(self.capture_table)
         self.capture_table.setRowCount(len(project["entries"]))
         for row, entry in enumerate(project["entries"]):
             values = [
@@ -489,24 +687,82 @@ class CelineAutomationApp(QMainWindow):
         self.capture_table.resizeColumnsToContents()
         self.capture_table.setSortingEnabled(True)
 
-    def _choose_vst(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Select Celine VST3", "", "VST3 plugin (*.vst3)")
-        if path:
-            self.vst_path.setText(path)
-
     def _setup_celine(self):
-        if not self.vst_path.text().strip():
-            QMessageBox.warning(self, "Missing plugin", "Select the Celine VST3 first.")
+        if not self.vst_path:
+            QMessageBox.warning(self, "Celine not found", "Install Celine.vst3 in the default VST3 directory.")
             return
+        if not Path(self.vst_path).exists():
+            QMessageBox.warning(self, "Celine not found", "Install Celine.vst3 in the default VST3 directory.")
+            return
+        previous = self._collect_setup_parameters()
         self.setup_button.setEnabled(False)
         self.status.setText("Loading Celine and opening its editor...")
         try:
-            self.plugin = load_plugin(self.vst_path.text().strip())
-            self.plugin.show_editor(threading.Event())
+            self.plugin = load_plugin(self.vst_path)
+            editor_position_stop = threading.Event()
+            editor_position_thread = threading.Thread(
+                target=center_celine_editor_window,
+                args=(editor_position_stop, int(self.winId())),
+                daemon=True,
+            )
+            editor_position_thread.start()
+            try:
+                self.plugin.show_editor(threading.Event())
+            finally:
+                editor_position_stop.set()
             self.plugin_parameters = list(self.plugin.parameters)
-            self.knob_count.setValue(len(self.plugin_parameters))
-            self._populate_knob_table()
-            self.render_button.setEnabled(True)
+            plugin_defaults = (
+                self._read_plugin_defaults() if self.saved_setup is None else {}
+            )
+            self.knob_count.blockSignals(True)
+            self.knob_count.setValue(min(len(self.plugin_parameters), self.knob_count.value() or len(self.plugin_parameters)))
+            self.knob_count.blockSignals(False)
+            if self.saved_setup:
+                self._apply_saved_setup()
+            elif previous:
+                project_knobs = [
+                    knob["name"] for knob in (self.project or {}).get("knobs", [])
+                ]
+                for parameter, static_value in plugin_defaults.items():
+                    if parameter in previous:
+                        previous[parameter]["static_value"] = static_value
+                    else:
+                        matching_knob = next(
+                            (
+                                knob_name
+                                for knob_name in project_knobs
+                                if knob_name.casefold() == parameter.casefold()
+                            ),
+                            None,
+                        )
+                        previous[parameter] = {
+                            "captured": matching_knob is not None,
+                            "capture_knob": matching_knob or "",
+                            "static_value": static_value,
+                        }
+                self._populate_knob_table(self.knob_count.value(), previous)
+            else:
+                defaults = {}
+                project_knobs = [
+                    knob["name"] for knob in (self.project or {}).get("knobs", [])
+                ]
+                for parameter in self.plugin_parameters:
+                    matching_knob = next(
+                        (
+                            knob_name
+                            for knob_name in project_knobs
+                            if knob_name.casefold() == parameter.casefold()
+                        ),
+                        None,
+                    )
+                    defaults[parameter] = {
+                        "captured": matching_knob is not None,
+                        "capture_knob": matching_knob or "",
+                        "static_value": plugin_defaults.get(parameter, 5.0),
+                    }
+                self._populate_knob_table(self.knob_count.value(), defaults)
+            self.render_button.setEnabled(self._inputs_available())
+            self._save_setup()
             self.status.setText(
                 "Celine setup loaded. Assign capture knobs and static values, then render."
             )
@@ -517,57 +773,195 @@ class CelineAutomationApp(QMainWindow):
         finally:
             self.setup_button.setEnabled(True)
 
+    def _read_plugin_defaults(self):
+        defaults = {}
+        for parameter_name in self.plugin_parameters:
+            parameter = self.plugin.parameters[parameter_name]
+            raw_value = float(parameter.raw_value)
+            if parameter_name.casefold() == "input_db":
+                minimum, maximum, *_ = parameter.range
+                actual_value = float(minimum + raw_value * (maximum - minimum))
+                static_value = (
+                    actual_value - CELINE_INPUT_DB_MIN
+                ) / (CELINE_INPUT_DB_MAX - CELINE_INPUT_DB_MIN) * NAM_KNOB_MAX
+            else:
+                static_value = raw_value * NAM_KNOB_MAX
+            defaults[parameter_name] = max(
+                NAM_KNOB_MIN, min(NAM_KNOB_MAX, round(static_value, 1))
+            )
+        return defaults
+
     def _limit_knob_rows(self, count):
         if self.plugin_parameters:
-            self._populate_knob_table(count)
+            previous = self._collect_setup_parameters()
+            self._populate_knob_table(count, previous)
+            self._save_setup()
 
-    def _populate_knob_table(self, count=None):
+    def _collect_setup_parameters(self):
+        values = {}
+        for row in range(self.knob_table.rowCount()):
+            item = self.knob_table.item(row, 0)
+            captured = self.knob_table.cellWidget(row, 1)
+            capture_box = self.knob_table.cellWidget(row, 2)
+            value = self.knob_table.cellWidget(row, 3)
+            if item is None or captured is None or capture_box is None or value is None:
+                continue
+            values[item.text()] = {
+                "captured": captured.isChecked(),
+                "capture_knob": capture_box.currentText(),
+                "static_value": value.value(),
+            }
+        return values
+
+    def _populate_knob_table(self, count=None, previous=None):
         count = len(self.plugin_parameters) if count is None else min(
             count, len(self.plugin_parameters)
         )
         project_knobs = [knob["name"] for knob in (self.project or {}).get("knobs", [])]
-        self.knob_table.setRowCount(count)
-        for row in range(count):
-            parameter = self.plugin_parameters[row]
-            self.knob_table.setItem(row, 0, QTableWidgetItem(parameter))
+        previous = previous or {}
+        self._updating_setup_table = True
+        try:
+            self.knob_table.setRowCount(count)
+            for row in range(count):
+                parameter = self.plugin_parameters[row]
+                self.knob_table.setItem(row, 0, QTableWidgetItem(parameter))
 
-            captured = QCheckBox("Captured")
-            captured.stateChanged.connect(
-                lambda state, row=row: self._set_knob_captured(row, state)
-            )
-            self.knob_table.setCellWidget(row, 1, captured)
+                captured = QCheckBox("Captured")
+                captured.stateChanged.connect(
+                    lambda state, row=row: self._set_knob_captured(row, state)
+                )
+                self.knob_table.setCellWidget(row, 1, captured)
 
-            capture_box = QComboBox()
-            for knob_name in project_knobs:
-                capture_box.addItem(knob_name)
-            capture_box.setEnabled(False)
-            self.knob_table.setCellWidget(row, 2, capture_box)
-            matching_knob = next(
-                (
-                    knob_name
-                    for knob_name in project_knobs
-                    if knob_name.casefold() == parameter.casefold()
-                ),
-                None,
-            )
-            if matching_knob is not None:
-                capture_box.setCurrentText(matching_knob)
-                captured.setChecked(True)
+                capture_box = QComboBox()
+                for knob_name in project_knobs:
+                    capture_box.addItem(knob_name)
+                capture_box.setEnabled(False)
+                capture_box.currentTextChanged.connect(lambda _value: self._save_setup())
+                self.knob_table.setCellWidget(row, 2, capture_box)
+                matching_knob = next(
+                    (
+                        knob_name
+                        for knob_name in project_knobs
+                        if knob_name.casefold() == parameter.casefold()
+                    ),
+                    None,
+                )
+                if matching_knob is not None:
+                    capture_box.setCurrentText(matching_knob)
+                    captured.setChecked(True)
 
-            value = QDoubleSpinBox()
-            value.setRange(0.0, 10.0)
-            value.setDecimals(1)
-            value.setSingleStep(0.1)
-            value.setValue(5.0)
-            self.knob_table.setCellWidget(row, 3, value)
+                value = QDoubleSpinBox()
+                value.setRange(0.0, 10.0)
+                value.setDecimals(1)
+                value.setSingleStep(0.1)
+                value.setValue(5.0)
+                value.valueChanged.connect(lambda _value: self._save_setup())
+                self.knob_table.setCellWidget(row, 3, value)
+                saved = previous.get(parameter)
+                if saved:
+                    capture_box.setCurrentText(saved.get("capture_knob", ""))
+                    value.setValue(float(saved.get("static_value", 5.0)))
+                    captured.setChecked(bool(saved.get("captured", False)))
+        finally:
+            self._updating_setup_table = False
         self.knob_table.resizeColumnsToContents()
+
+    def _apply_saved_setup(self):
+        if not self.saved_setup:
+            return
+        self._updating_setup_table = True
+        try:
+            count = min(
+                int(self.saved_setup.get("parameter_count", self.knob_table.rowCount())),
+                len(self.plugin_parameters),
+            )
+            self.knob_count.blockSignals(True)
+            self.knob_count.setValue(count)
+            self.knob_count.blockSignals(False)
+            self._populate_knob_table(count)
+            saved = {
+                item.get("parameter"): item
+                for item in self.saved_setup.get("parameters", [])
+            }
+            for row in range(count):
+                parameter = self.plugin_parameters[row]
+                item = saved.get(parameter)
+                if not item:
+                    continue
+                captured = self.knob_table.cellWidget(row, 1)
+                capture_box = self.knob_table.cellWidget(row, 2)
+                value = self.knob_table.cellWidget(row, 3)
+                capture_box.setCurrentText(item.get("capture_knob", ""))
+                value.setValue(float(item.get("static_value", 5.0)))
+                captured.setChecked(bool(item.get("captured", False)))
+        finally:
+            self._updating_setup_table = False
+
+    def _save_setup(self):
+        if self.project_dir is None or self._updating_setup_table:
+            return
+        setup = {
+            "version": 1,
+            "plugin_path": self.vst_path,
+            "parameter_count": self.knob_table.rowCount(),
+            "parameters": [],
+        }
+        for row in range(self.knob_table.rowCount()):
+            parameter = self.knob_table.item(row, 0)
+            captured = self.knob_table.cellWidget(row, 1)
+            capture_box = self.knob_table.cellWidget(row, 2)
+            value = self.knob_table.cellWidget(row, 3)
+            if parameter is None or captured is None or capture_box is None or value is None:
+                continue
+            setup["parameters"].append({
+                "parameter": parameter.text(),
+                "captured": captured.isChecked(),
+                "capture_knob": capture_box.currentText(),
+                "static_value": value.value(),
+            })
+        write_json(self.project_dir / SETUP_FILENAME, setup)
+        self.saved_setup = setup
+
+    def _reset_celine_setup(self):
+        if self.project_dir is None:
+            QMessageBox.warning(self, "No project open", "Open a capture project first.")
+            return
+        setup_path = self.project_dir / SETUP_FILENAME
+        if setup_path.exists():
+            answer = QMessageBox.question(
+                self,
+                "Reset Celine setup",
+                "Delete this project's saved Celine setup and use the current "
+                "Celine knob values the next time setup is opened?",
+            )
+            if answer != QMessageBox.Yes:
+                return
+            try:
+                setup_path.unlink()
+            except OSError as error:
+                QMessageBox.critical(self, "Reset Celine setup failed", str(error))
+                return
+        self.saved_setup = None
+        self.plugin_parameters = []
+        self.plugin = None
+        self.knob_count.blockSignals(True)
+        self.knob_count.setValue(0)
+        self.knob_count.blockSignals(False)
+        self.knob_table.setRowCount(0)
+        self.render_button.setEnabled(False)
+        self.status.setText(
+            "Celine setup reset. Set Up Celine to import current knob values."
+        )
 
     def _set_knob_captured(self, row, state):
         capture_box = self.knob_table.cellWidget(row, 2)
         value = self.knob_table.cellWidget(row, 3)
+        if capture_box is None or value is None:
+            return
         is_captured = state == 2
         capture_box.setEnabled(is_captured)
         value.setEnabled(not is_captured)
+        self._save_setup()
 
     def _get_assignments(self):
         assignments = []
@@ -602,6 +996,7 @@ class CelineAutomationApp(QMainWindow):
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
         worker.signals.status.connect(self.status.setText)
+        worker.signals.eta.connect(self.eta_status.setText)
         worker.signals.capture_progress.connect(self._update_capture_progress)
         worker.signals.capture_finished.connect(self._capture_finished)
         worker.signals.finished.connect(self._render_finished)
@@ -628,6 +1023,13 @@ class CelineAutomationApp(QMainWindow):
         if self.project_dir is None or self.project is None:
             QMessageBox.warning(self, "No project open", "Open a capture project first.")
             return
+        if not self._inputs_available():
+            QMessageBox.warning(
+                self,
+                "Missing input audio",
+                "The project must contain both inputTrunc.wav and validation.wav before rendering.",
+            )
+            return
         if self.plugin is None:
             QMessageBox.warning(self, "Celine not set up", "Click Set Up Celine first.")
             return
@@ -639,7 +1041,9 @@ class CelineAutomationApp(QMainWindow):
         self.render_button.setEnabled(False)
         self.reset_button.setEnabled(False)
         self.stop_button.setEnabled(True)
+        self._save_setup()
         self.status.setText("Rendering captures...")
+        self.eta_status.setText("Estimated time remaining: calculating...")
         self._run_worker((self.plugin, self.project_dir, self.project, assignments))
 
     def _update_capture_progress(self, row, done, chunks, label):
@@ -661,6 +1065,7 @@ class CelineAutomationApp(QMainWindow):
         if self.project is not None:
             self._show_capture_table(self.project)
         self.status.setText(message)
+        self.eta_status.setText("Estimated time remaining: 0:00")
         QMessageBox.information(self, "Render complete", message)
 
     def _stop_render(self):
@@ -703,12 +1108,14 @@ class CelineAutomationApp(QMainWindow):
         self.reset_button.setEnabled(True)
         self.stop_button.setEnabled(False)
         self.status.setText(message)
+        self.eta_status.setText("Estimated time remaining: stopped")
 
     def _worker_error(self, error):
         self.render_button.setEnabled(True)
         self.reset_button.setEnabled(True)
         self.stop_button.setEnabled(False)
         self.status.setText("An error occurred.")
+        self.eta_status.setText("Estimated time remaining: unavailable")
         QMessageBox.critical(self, "Celine automation", error)
 
 
