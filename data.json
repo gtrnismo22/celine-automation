@@ -1,0 +1,76 @@
+{
+    "type": "parametric",
+    "common": {
+        "delay": 0
+    },
+    "train": [
+        {
+            "x_path": "input.wav",
+            "y_path": "captures/lhs_000_I3.wav",
+            "delay": 4280,
+            "params": {
+                "Input": 3.0
+            },
+            "start_seconds": 0.0,
+            "stop_seconds": null,
+            "ny": 8192
+        },
+        {
+            "x_path": "input.wav",
+            "y_path": "captures/lhs_001_I6.wav",
+            "delay": 4280,
+            "params": {
+                "Input": 6.0
+            },
+            "start_seconds": 0.0,
+            "stop_seconds": null,
+            "ny": 8192
+        },
+	{
+            "x_path": "input.wav",
+            "y_path": "captures/lhs_002_I8.wav",
+            "delay": 4280,
+            "params": {
+                "Input": 8.0
+            },
+            "start_seconds": 0.0,
+            "stop_seconds": null,
+            "ny": 8192
+        }
+    ],
+    "validation": [
+{
+            "x_path": "input.wav",
+            "y_path": "captures/lhs_000_I3.wav",
+            "delay": 4280,
+            "params": {
+                "Input": 3.0
+            },
+            "start_seconds": 0.0,
+            "stop_seconds": null,
+            "ny": 8192
+        },
+        {
+            "x_path": "input.wav",
+            "y_path": "captures/lhs_001_I6.wav",
+            "delay": 4280,
+            "params": {
+                "Input": 6.0
+            },
+            "start_seconds": 0.0,
+            "stop_seconds": null,
+            "ny": 8192
+        },
+	{
+            "x_path": "input.wav",
+            "y_path": "captures/lhs_002_I8.wav",
+            "delay": 4280,
+            "params": {
+                "Input": 8.0
+            },
+            "start_seconds": 0.0,
+            "stop_seconds": null,
+            "ny": 8192
+        }
+    ]
+}

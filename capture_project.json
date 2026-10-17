@@ -1,0 +1,615 @@
+{
+    "version": 1,
+    "name": "new test",
+    "knobs": [
+        {
+            "name": "Gain",
+            "min": 0.0,
+            "max": 10.0,
+            "step": 0.5,
+            "default": 5.0,
+            "avoid_zero": true,
+            "is_gain": true
+        },
+        {
+            "name": "Master",
+            "min": 0.0,
+            "max": 10.0,
+            "step": 0.5,
+            "default": 5.0,
+            "avoid_zero": true,
+            "is_gain": false
+        }
+    ],
+    "seed": 0,
+    "train_input": "inputTrunc.wav",
+    "validation_input": "validation.wav",
+    "sample_rate": null,
+    "train_window": {
+        "start_seconds": 0.0,
+        "stop_seconds": null,
+        "ny": 8192
+    },
+    "validation_window": {
+        "start_seconds": 0.0,
+        "stop_seconds": null,
+        "ny": 317270
+    },
+    "audio": {
+        "host_api": null,
+        "output_device": null,
+        "input_device": null,
+        "output_channel": 1,
+        "input_channel": 1,
+        "loopback_output_channel": 2,
+        "loopback_input_channel": 2,
+        "blocksize": 0,
+        "latency": "low"
+    },
+    "entries": [
+        {
+            "index": 0,
+            "split": "train",
+            "params": {
+                "Gain": 0.5,
+                "Master": 2.5
+            },
+            "y_path": "captures/lhs_000_G0.5_M2.5.wav",
+            "status": "pending",
+            "delay": null,
+            "captured_at": null,
+            "qa": null,
+            "stream_config": null
+        },
+        {
+            "index": 1,
+            "split": "train",
+            "params": {
+                "Gain": 0.5,
+                "Master": 9.0
+            },
+            "y_path": "captures/lhs_001_G0.5_M9.wav",
+            "status": "pending",
+            "delay": null,
+            "captured_at": null,
+            "qa": null,
+            "stream_config": null
+        },
+        {
+            "index": 2,
+            "split": "train",
+            "params": {
+                "Gain": 1.0,
+                "Master": 2.0
+            },
+            "y_path": "captures/lhs_002_G1_M2.wav",
+            "status": "pending",
+            "delay": null,
+            "captured_at": null,
+            "qa": null,
+            "stream_config": null
+        },
+        {
+            "index": 3,
+            "split": "train",
+            "params": {
+                "Gain": 1.0,
+                "Master": 5.5
+            },
+            "y_path": "captures/lhs_003_G1_M5.5.wav",
+            "status": "pending",
+            "delay": null,
+            "captured_at": null,
+            "qa": null,
+            "stream_config": null
+        },
+        {
+            "index": 4,
+            "split": "train",
+            "params": {
+                "Gain": 1.5,
+                "Master": 6.0
+            },
+            "y_path": "captures/lhs_004_G1.5_M6.wav",
+            "status": "pending",
+            "delay": null,
+            "captured_at": null,
+            "qa": null,
+            "stream_config": null
+        },
+        {
+            "index": 5,
+            "split": "train",
+            "params": {
+                "Gain": 2.0,
+                "Master": 8.0
+            },
+            "y_path": "captures/lhs_005_G2_M8.wav",
+            "status": "pending",
+            "delay": null,
+            "captured_at": null,
+            "qa": null,
+            "stream_config": null
+        },
+        {
+            "index": 6,
+            "split": "train",
+            "params": {
+                "Gain": 2.0,
+                "Master": 9.5
+            },
+            "y_path": "captures/lhs_006_G2_M9.5.wav",
+            "status": "pending",
+            "delay": null,
+            "captured_at": null,
+            "qa": null,
+            "stream_config": null
+        },
+        {
+            "index": 7,
+            "split": "train",
+            "params": {
+                "Gain": 2.5,
+                "Master": 4.5
+            },
+            "y_path": "captures/lhs_007_G2.5_M4.5.wav",
+            "status": "pending",
+            "delay": null,
+            "captured_at": null,
+            "qa": null,
+            "stream_config": null
+        },
+        {
+            "index": 8,
+            "split": "train",
+            "params": {
+                "Gain": 3.0,
+                "Master": 2.0
+            },
+            "y_path": "captures/lhs_008_G3_M2.wav",
+            "status": "pending",
+            "delay": null,
+            "captured_at": null,
+            "qa": null,
+            "stream_config": null
+        },
+        {
+            "index": 9,
+            "split": "train",
+            "params": {
+                "Gain": 3.0,
+                "Master": 6.5
+            },
+            "y_path": "captures/lhs_009_G3_M6.5.wav",
+            "status": "pending",
+            "delay": null,
+            "captured_at": null,
+            "qa": null,
+            "stream_config": null
+        },
+        {
+            "index": 10,
+            "split": "train",
+            "params": {
+                "Gain": 3.5,
+                "Master": 1.0
+            },
+            "y_path": "captures/lhs_010_G3.5_M1.wav",
+            "status": "pending",
+            "delay": null,
+            "captured_at": null,
+            "qa": null,
+            "stream_config": null
+        },
+        {
+            "index": 11,
+            "split": "train",
+            "params": {
+                "Gain": 4.0,
+                "Master": 4.5
+            },
+            "y_path": "captures/lhs_011_G4_M4.5.wav",
+            "status": "pending",
+            "delay": null,
+            "captured_at": null,
+            "qa": null,
+            "stream_config": null
+        },
+        {
+            "index": 12,
+            "split": "train",
+            "params": {
+                "Gain": 4.0,
+                "Master": 8.0
+            },
+            "y_path": "captures/lhs_012_G4_M8.wav",
+            "status": "pending",
+            "delay": null,
+            "captured_at": null,
+            "qa": null,
+            "stream_config": null
+        },
+        {
+            "index": 13,
+            "split": "train",
+            "params": {
+                "Gain": 4.5,
+                "Master": 3.0
+            },
+            "y_path": "captures/lhs_013_G4.5_M3.wav",
+            "status": "pending",
+            "delay": null,
+            "captured_at": null,
+            "qa": null,
+            "stream_config": null
+        },
+        {
+            "index": 14,
+            "split": "train",
+            "params": {
+                "Gain": 5.0,
+                "Master": 4.5
+            },
+            "y_path": "captures/lhs_014_G5_M4.5.wav",
+            "status": "pending",
+            "delay": null,
+            "captured_at": null,
+            "qa": null,
+            "stream_config": null
+        },
+        {
+            "index": 15,
+            "split": "train",
+            "params": {
+                "Gain": 5.0,
+                "Master": 10.0
+            },
+            "y_path": "captures/lhs_015_G5_M10.wav",
+            "status": "pending",
+            "delay": null,
+            "captured_at": null,
+            "qa": null,
+            "stream_config": null
+        },
+        {
+            "index": 16,
+            "split": "train",
+            "params": {
+                "Gain": 5.5,
+                "Master": 6.5
+            },
+            "y_path": "captures/lhs_016_G5.5_M6.5.wav",
+            "status": "pending",
+            "delay": null,
+            "captured_at": null,
+            "qa": null,
+            "stream_config": null
+        },
+        {
+            "index": 17,
+            "split": "train",
+            "params": {
+                "Gain": 6.0,
+                "Master": 6.0
+            },
+            "y_path": "captures/lhs_017_G6_M6.wav",
+            "status": "pending",
+            "delay": null,
+            "captured_at": null,
+            "qa": null,
+            "stream_config": null
+        },
+        {
+            "index": 18,
+            "split": "train",
+            "params": {
+                "Gain": 6.5,
+                "Master": 3.5
+            },
+            "y_path": "captures/lhs_018_G6.5_M3.5.wav",
+            "status": "pending",
+            "delay": null,
+            "captured_at": null,
+            "qa": null,
+            "stream_config": null
+        },
+        {
+            "index": 19,
+            "split": "train",
+            "params": {
+                "Gain": 6.5,
+                "Master": 8.5
+            },
+            "y_path": "captures/lhs_019_G6.5_M8.5.wav",
+            "status": "pending",
+            "delay": null,
+            "captured_at": null,
+            "qa": null,
+            "stream_config": null
+        },
+        {
+            "index": 20,
+            "split": "train",
+            "params": {
+                "Gain": 6.5,
+                "Master": 9.5
+            },
+            "y_path": "captures/lhs_020_G6.5_M9.5.wav",
+            "status": "pending",
+            "delay": null,
+            "captured_at": null,
+            "qa": null,
+            "stream_config": null
+        },
+        {
+            "index": 21,
+            "split": "train",
+            "params": {
+                "Gain": 7.5,
+                "Master": 3.0
+            },
+            "y_path": "captures/lhs_021_G7.5_M3.wav",
+            "status": "pending",
+            "delay": null,
+            "captured_at": null,
+            "qa": null,
+            "stream_config": null
+        },
+        {
+            "index": 22,
+            "split": "train",
+            "params": {
+                "Gain": 7.5,
+                "Master": 4.0
+            },
+            "y_path": "captures/lhs_022_G7.5_M4.wav",
+            "status": "pending",
+            "delay": null,
+            "captured_at": null,
+            "qa": null,
+            "stream_config": null
+        },
+        {
+            "index": 23,
+            "split": "train",
+            "params": {
+                "Gain": 8.0,
+                "Master": 0.5
+            },
+            "y_path": "captures/lhs_023_G8_M0.5.wav",
+            "status": "pending",
+            "delay": null,
+            "captured_at": null,
+            "qa": null,
+            "stream_config": null
+        },
+        {
+            "index": 24,
+            "split": "train",
+            "params": {
+                "Gain": 8.0,
+                "Master": 7.0
+            },
+            "y_path": "captures/lhs_024_G8_M7.wav",
+            "status": "pending",
+            "delay": null,
+            "captured_at": null,
+            "qa": null,
+            "stream_config": null
+        },
+        {
+            "index": 25,
+            "split": "train",
+            "params": {
+                "Gain": 8.5,
+                "Master": 7.5
+            },
+            "y_path": "captures/lhs_025_G8.5_M7.5.wav",
+            "status": "pending",
+            "delay": null,
+            "captured_at": null,
+            "qa": null,
+            "stream_config": null
+        },
+        {
+            "index": 26,
+            "split": "train",
+            "params": {
+                "Gain": 9.0,
+                "Master": 1.0
+            },
+            "y_path": "captures/lhs_026_G9_M1.wav",
+            "status": "pending",
+            "delay": null,
+            "captured_at": null,
+            "qa": null,
+            "stream_config": null
+        },
+        {
+            "index": 27,
+            "split": "train",
+            "params": {
+                "Gain": 9.5,
+                "Master": 0.5
+            },
+            "y_path": "captures/lhs_027_G9.5_M0.5.wav",
+            "status": "pending",
+            "delay": null,
+            "captured_at": null,
+            "qa": null,
+            "stream_config": null
+        },
+        {
+            "index": 28,
+            "split": "train",
+            "params": {
+                "Gain": 9.5,
+                "Master": 1.5
+            },
+            "y_path": "captures/lhs_028_G9.5_M1.5.wav",
+            "status": "pending",
+            "delay": null,
+            "captured_at": null,
+            "qa": null,
+            "stream_config": null
+        },
+        {
+            "index": 29,
+            "split": "train",
+            "params": {
+                "Gain": 9.5,
+                "Master": 5.0
+            },
+            "y_path": "captures/lhs_029_G9.5_M5.wav",
+            "status": "pending",
+            "delay": null,
+            "captured_at": null,
+            "qa": null,
+            "stream_config": null
+        },
+        {
+            "index": 30,
+            "split": "train",
+            "params": {
+                "Gain": 0.5,
+                "Master": 0.5
+            },
+            "y_path": "captures/corner_000_G0.5_M0.5.wav",
+            "status": "pending",
+            "delay": null,
+            "captured_at": null,
+            "qa": null,
+            "stream_config": null
+        },
+        {
+            "index": 31,
+            "split": "train",
+            "params": {
+                "Gain": 0.5,
+                "Master": 10.0
+            },
+            "y_path": "captures/corner_001_G0.5_M10.wav",
+            "status": "pending",
+            "delay": null,
+            "captured_at": null,
+            "qa": null,
+            "stream_config": null
+        },
+        {
+            "index": 32,
+            "split": "train",
+            "params": {
+                "Gain": 10.0,
+                "Master": 0.5
+            },
+            "y_path": "captures/corner_002_G10_M0.5.wav",
+            "status": "pending",
+            "delay": null,
+            "captured_at": null,
+            "qa": null,
+            "stream_config": null
+        },
+        {
+            "index": 33,
+            "split": "train",
+            "params": {
+                "Gain": 10.0,
+                "Master": 10.0
+            },
+            "y_path": "captures/corner_003_G10_M10.wav",
+            "status": "pending",
+            "delay": null,
+            "captured_at": null,
+            "qa": null,
+            "stream_config": null
+        },
+        {
+            "index": 0,
+            "split": "validation",
+            "params": {
+                "Gain": 1.5,
+                "Master": 5.0
+            },
+            "y_path": "captures/val_lhs_000_G1.5_M5.wav",
+            "status": "pending",
+            "delay": null,
+            "captured_at": null,
+            "qa": null,
+            "stream_config": null
+        },
+        {
+            "index": 1,
+            "split": "validation",
+            "params": {
+                "Gain": 3.0,
+                "Master": 1.0
+            },
+            "y_path": "captures/val_lhs_001_G3_M1.wav",
+            "status": "pending",
+            "delay": null,
+            "captured_at": null,
+            "qa": null,
+            "stream_config": null
+        },
+        {
+            "index": 2,
+            "split": "validation",
+            "params": {
+                "Gain": 4.5,
+                "Master": 7.0
+            },
+            "y_path": "captures/val_lhs_002_G4.5_M7.wav",
+            "status": "pending",
+            "delay": null,
+            "captured_at": null,
+            "qa": null,
+            "stream_config": null
+        },
+        {
+            "index": 3,
+            "split": "validation",
+            "params": {
+                "Gain": 5.5,
+                "Master": 5.5
+            },
+            "y_path": "captures/val_lhs_003_G5.5_M5.5.wav",
+            "status": "pending",
+            "delay": null,
+            "captured_at": null,
+            "qa": null,
+            "stream_config": null
+        },
+        {
+            "index": 4,
+            "split": "validation",
+            "params": {
+                "Gain": 7.5,
+                "Master": 2.0
+            },
+            "y_path": "captures/val_lhs_004_G7.5_M2.wav",
+            "status": "pending",
+            "delay": null,
+            "captured_at": null,
+            "qa": null,
+            "stream_config": null
+        },
+        {
+            "index": 5,
+            "split": "validation",
+            "params": {
+                "Gain": 8.5,
+                "Master": 9.0
+            },
+            "y_path": "captures/val_lhs_005_G8.5_M9.wav",
+            "status": "pending",
+            "delay": null,
+            "captured_at": null,
+            "qa": null,
+            "stream_config": null
+        }
+    ],
+    "n_train_lhs": 30,
+    "include_initial_corners": true,
+    "alignment_reference": null,
+    "created_with_version": "1.2.0"
+}
