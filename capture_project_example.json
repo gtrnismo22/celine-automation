@@ -1,0 +1,130 @@
+{
+    "version": 1,
+    "name": "test_renders",
+    "knobs": [
+        {
+            "name": "Input",
+            "min": 2.0,
+            "max": 8.0,
+            "step": 3.0,
+            "default": 5.0,
+            "avoid_zero": false,
+            "is_gain": true
+        }
+    ],
+    "seed": 0,
+    "train_input": "input.wav",
+    "validation_input": "input.wav",
+    "sample_rate": 48000,
+    "train_window": {
+        "start_seconds": 0.0,
+        "stop_seconds": null,
+        "ny": 8192
+    },
+    "validation_window": {
+        "start_seconds": 0.0,
+        "stop_seconds": null,
+        "ny": 317270
+    },
+    "audio": {
+        "host_api": "ASIO",
+        "output_device": "Focusrite USB ASIO",
+        "input_device": "Focusrite USB ASIO",
+        "output_channel": 1,
+        "input_channel": 1,
+        "loopback_output_channel": 2,
+        "loopback_input_channel": 2,
+        "blocksize": 0,
+        "latency": "low"
+    },
+    "entries": [
+        {
+            "index": 0,
+            "split": "train",
+            "params": {
+                "Input": 3.0
+            },
+            "y_path": "captures/lhs_000_I3.wav",
+            "status": "captured",
+            "delay": 4280,
+            "captured_at": "2026-10-17T04:54:50+00:00",
+            "qa": {
+                "peak": -0.08729707027494817,
+                "clipping": false,
+                "impulse_detected": true,
+                "delay_disagreement": false,
+                "loopback_disagreement": false,
+                "loopback_delay": 4283,
+                "amp_return_delay": 4283,
+                "subsample_shift": null,
+                "peak_delay": 4284.0,
+                "blip_delays": [
+                    4284,
+                    4284
+                ],
+                "messages": []
+            },
+            "stream_config": "Focusrite USB ASIO|Focusrite USB ASIO|ASIO|in5|out3|lb6>4|bs0|latlow"
+        },
+        {
+            "index": 1,
+            "split": "train",
+            "params": {
+                "Input": 6.0
+            },
+            "y_path": "captures/lhs_001_I6.wav",
+            "status": "captured",
+            "delay": 4280,
+            "captured_at": "2026-10-17T04:58:39+00:00",
+            "qa": {
+                "peak": -0.2895138302160628,
+                "clipping": false,
+                "impulse_detected": true,
+                "delay_disagreement": false,
+                "loopback_disagreement": false,
+                "loopback_delay": 4282,
+                "amp_return_delay": 4282,
+                "subsample_shift": 0.5,
+                "peak_delay": 4283.5,
+                "blip_delays": [
+                    4283,
+                    4284
+                ],
+                "messages": []
+            },
+            "stream_config": "Focusrite USB ASIO|Focusrite USB ASIO|ASIO|in5|out3|lb6>4|bs0|latlow"
+        },
+        {
+            "index": 2,
+            "split": "train",
+            "params": {
+                "Input": 8.0
+            },
+            "y_path": "captures/lhs_002_I8.wav",
+            "status": "captured",
+            "delay": 4280,
+            "captured_at": "2026-10-17T05:58:39+00:00",
+            "qa": {
+                "peak": -0.2895138302160628,
+                "clipping": false,
+                "impulse_detected": true,
+                "delay_disagreement": false,
+                "loopback_disagreement": false,
+                "loopback_delay": 4282,
+                "amp_return_delay": 4282,
+                "subsample_shift": 0.5,
+                "peak_delay": 4283.5,
+                "blip_delays": [
+                    4283,
+                    4284
+                ],
+                "messages": []
+            },
+            "stream_config": "Focusrite USB ASIO|Focusrite USB ASIO|ASIO|in5|out3|lb6>4|bs0|latlow"
+        }
+    ],
+    "n_train_lhs": 3,
+    "include_initial_corners": true,
+    "alignment_reference": null,
+    "created_with_version": "1.2.0"
+}
