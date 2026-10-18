@@ -463,6 +463,21 @@ class CelineAutomationApp(QMainWindow):
         self.validation_status = QLabel("validation.wav: no project open")
         self.status = QLabel("Open a project directory to begin.")
         self.eta_status = QLabel("Estimated time remaining: --")
+        self.epoch_group = QGroupBox("Training")
+        epoch_layout = QFormLayout(self.epoch_group)
+        self.epoch_input = QSpinBox()
+        self.epoch_input.setRange(1, 1_000_000)
+        self.epoch_input.valueChanged.connect(self._save_epoch_count)
+        epoch_layout.addRow("Max epochs", self.epoch_input)
+        self.train_workers_input = QSpinBox()
+        self.train_workers_input.setRange(0, 1_000_000)
+        self.train_workers_input.valueChanged.connect(self._save_training_config)
+        epoch_layout.addRow("Train workers", self.train_workers_input)
+        self.val_workers_input = QSpinBox()
+        self.val_workers_input.setRange(0, 1_000_000)
+        self.val_workers_input.valueChanged.connect(self._save_training_config)
+        epoch_layout.addRow("Validation workers", self.val_workers_input)
+        self.epoch_group.hide()
         self.capture_table = QTableWidget()
         self.capture_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.capture_table.setAlternatingRowColors(True)
@@ -505,6 +520,7 @@ class CelineAutomationApp(QMainWindow):
         open_project_button.clicked.connect(self._open_project)
         project_actions.addWidget(open_project_button)
         project_actions.addWidget(self.project_summary, 1)
+        project_actions.addWidget(self.epoch_group)
         layout.addLayout(project_actions)
 
         source = QGroupBox("Project audio")
@@ -599,6 +615,7 @@ class CelineAutomationApp(QMainWindow):
         self.project_dir = project_dir
         self.project = project
         self.saved_setup = None
+        self._load_epoch_count()
         self._update_audio_status()
         setup_path = project_dir / SETUP_FILENAME
         if setup_path.is_file():
@@ -637,6 +654,100 @@ class CelineAutomationApp(QMainWindow):
             f"{train_count} train + {validation_count} validation captures"
         )
         self.status.setText(f"Opened project: {project_dir}")
+
+    def _load_epoch_count(self):
+        self.epoch_group.hide()
+        if self.project_dir is None:
+            return
+        learning_path = self.project_dir / "learning_concat.json"
+        if not learning_path.is_file():
+            return
+        try:
+            with learning_path.open(encoding="utf-8") as file:
+                learning_config = json.load(file)
+            if not isinstance(learning_config, dict):
+                raise ValueError("learning_concat.json must contain a JSON object.")
+            trainer = learning_config.get("trainer")
+            max_epochs = trainer.get("max_epochs") if isinstance(trainer, dict) else None
+            if not isinstance(trainer, dict):
+                raise ValueError("learning_concat.json is missing a trainer object.")
+            if isinstance(max_epochs, bool) or not isinstance(max_epochs, int):
+                raise ValueError("learning_concat.json trainer.max_epochs must be an integer.")
+            if not 1 <= max_epochs <= self.epoch_input.maximum():
+                raise ValueError(
+                    f"learning_concat.json trainer.max_epochs must be between 1 and "
+                    f"{self.epoch_input.maximum()}."
+                )
+            train_dataloader = learning_config.get("train_dataloader")
+            val_dataloader = learning_config.get("val_dataloader")
+            if not isinstance(train_dataloader, dict) or not isinstance(val_dataloader, dict):
+                raise ValueError(
+                    "learning_concat.json is missing train_dataloader or val_dataloader."
+                )
+            train_workers = train_dataloader.get("num_workers")
+            val_workers = val_dataloader.get("num_workers")
+            if (
+                isinstance(train_workers, bool)
+                or not isinstance(train_workers, int)
+                or isinstance(val_workers, bool)
+                or not isinstance(val_workers, int)
+                or train_workers < 0
+                or val_workers < 0
+            ):
+                raise ValueError(
+                    "learning_concat.json dataloader num_workers values must be "
+                    "non-negative integers."
+                )
+            if (
+                train_workers > self.train_workers_input.maximum()
+                or val_workers > self.val_workers_input.maximum()
+            ):
+                raise ValueError(
+                    f"learning_concat.json dataloader num_workers values must be between "
+                    f"0 and {self.train_workers_input.maximum()}."
+                )
+            self.epoch_input.blockSignals(True)
+            self.train_workers_input.blockSignals(True)
+            self.val_workers_input.blockSignals(True)
+            self.epoch_input.setValue(max_epochs)
+            self.train_workers_input.setValue(train_workers)
+            self.val_workers_input.setValue(val_workers)
+            self.epoch_input.blockSignals(False)
+            self.train_workers_input.blockSignals(False)
+            self.val_workers_input.blockSignals(False)
+            self.epoch_group.show()
+        except (OSError, json.JSONDecodeError, ValueError) as error:
+            QMessageBox.warning(self, "Training config unreadable", str(error))
+
+    def _save_epoch_count(self, value):
+        self._save_training_config(max_epochs=value)
+
+    def _save_training_config(self, value=None, max_epochs=None):
+        if self.project_dir is None or not self.epoch_group.isVisible():
+            return
+        learning_path = self.project_dir / "learning_concat.json"
+        try:
+            with learning_path.open(encoding="utf-8") as file:
+                learning_config = json.load(file)
+            if not isinstance(learning_config, dict):
+                raise ValueError("learning_concat.json must contain a JSON object.")
+            trainer = learning_config.get("trainer")
+            if not isinstance(trainer, dict):
+                raise ValueError("learning_concat.json is missing a trainer object.")
+            train_dataloader = learning_config.get("train_dataloader")
+            val_dataloader = learning_config.get("val_dataloader")
+            if not isinstance(train_dataloader, dict) or not isinstance(val_dataloader, dict):
+                raise ValueError(
+                    "learning_concat.json is missing train_dataloader or val_dataloader."
+                )
+            if max_epochs is not None:
+                trainer["max_epochs"] = max_epochs
+            else:
+                train_dataloader["num_workers"] = self.train_workers_input.value()
+                val_dataloader["num_workers"] = self.val_workers_input.value()
+            write_json(learning_path, learning_config)
+        except (OSError, json.JSONDecodeError, ValueError) as error:
+            QMessageBox.critical(self, "Training config update failed", str(error))
 
     def _update_audio_status(self):
         if self.project_dir is None:
