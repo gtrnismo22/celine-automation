@@ -173,6 +173,20 @@ def nam_value_to_celine_input_db(value):
     )
 
 
+def is_celine_input_parameter(parameter_name):
+    return parameter_name.casefold().replace("_", "") in {"input", "inputdb"}
+
+
+def parameter_matches_project_knob(parameter_name, knob_name):
+    return (
+        parameter_name.casefold() == knob_name.casefold()
+        or (
+            is_celine_input_parameter(parameter_name)
+            and knob_name.casefold() == "input"
+        )
+    )
+
+
 def format_duration(seconds):
     seconds = max(0, int(seconds))
     minutes, seconds = divmod(seconds, 60)
@@ -183,18 +197,33 @@ def format_duration(seconds):
 
 
 def set_celine_parameter(parameter_name, parameter, value, is_nam_value=False):
-    if parameter_name.casefold() == "input_db":
+    if is_celine_input_parameter(parameter_name):
+        minimum, maximum, *_ = parameter.range
         actual_value = (
-            nam_value_to_celine_input_db(value) if is_nam_value else value
+            nam_value_to_celine_input_db(value)
+            if is_nam_value
+            else value
         )
-        parameter.value = actual_value
+        expected_raw_value = parameter.get_raw_value_for(
+            max(minimum, min(maximum, actual_value))
+        )
+        parameter.raw_value = expected_raw_value
     else:
-        normalized_value = (
+        expected_raw_value = (
             (value - NAM_KNOB_MIN) / (NAM_KNOB_MAX - NAM_KNOB_MIN)
             if is_nam_value
             else value
         )
-        parameter.raw_value = normalized_value
+        parameter.raw_value = expected_raw_value
+
+    if is_nam_value:
+        if not np.isclose(
+            float(parameter.raw_value), float(expected_raw_value), atol=1e-4
+        ):
+            raise RuntimeError(
+                f"Celine parameter '{parameter_name}' did not accept the requested "
+                f"capture value (raw value is {parameter.raw_value!r})."
+            )
 
 
 def process_audio_in_chunks(plugin, audio, sample_rate, progress_callback, stop_event):
@@ -309,6 +338,9 @@ class CelineWorker(QObject):
         project_path = project_dir / "capture_project.json"
         data_path = project_dir / "data.json"
         data = create_data_json(project)
+        # Keep the training config limited to fields accepted by NAM. This
+        # also repairs data.json files written by older versions.
+        write_json(data_path, data)
         for row, entry in enumerate(entries):
             if self.stop_event.is_set():
                 self.signals.stopped.emit("Rendering stopped. Start again to resume.")
@@ -405,12 +437,6 @@ class CelineWorker(QObject):
             entry["qa"] = capture_metadata(output)
             entry["stream_config"] = "Celine VST3 via pedalboard"
             write_json(project_path, project)
-            data_entry = next(
-                item for item in data[split] if item["y_path"] == entry["y_path"]
-            )
-            data_entry["captured_at"] = entry["captured_at"]
-            data_entry["status"] = entry["status"]
-            data_entry["qa"] = entry["qa"]
             write_json(data_path, data)
             self.signals.capture_finished.emit(row)
         self.signals.finished.emit(f"Finished {total} capture(s).")
@@ -731,7 +757,7 @@ class CelineAutomationApp(QMainWindow):
                             (
                                 knob_name
                                 for knob_name in project_knobs
-                                if knob_name.casefold() == parameter.casefold()
+                                if parameter_matches_project_knob(parameter, knob_name)
                             ),
                             None,
                         )
@@ -751,7 +777,7 @@ class CelineAutomationApp(QMainWindow):
                         (
                             knob_name
                             for knob_name in project_knobs
-                            if knob_name.casefold() == parameter.casefold()
+                            if parameter_matches_project_knob(parameter, knob_name)
                         ),
                         None,
                     )
@@ -778,7 +804,7 @@ class CelineAutomationApp(QMainWindow):
         for parameter_name in self.plugin_parameters:
             parameter = self.plugin.parameters[parameter_name]
             raw_value = float(parameter.raw_value)
-            if parameter_name.casefold() == "input_db":
+            if is_celine_input_parameter(parameter_name):
                 minimum, maximum, *_ = parameter.range
                 actual_value = float(minimum + raw_value * (maximum - minimum))
                 static_value = (
@@ -842,7 +868,7 @@ class CelineAutomationApp(QMainWindow):
                     (
                         knob_name
                         for knob_name in project_knobs
-                        if knob_name.casefold() == parameter.casefold()
+                        if parameter_matches_project_knob(parameter, knob_name)
                     ),
                     None,
                 )
