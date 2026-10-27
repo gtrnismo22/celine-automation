@@ -501,10 +501,26 @@ class CelineAutomationApp(QMainWindow):
         self.train_workers_input.setRange(0, 1_000_000)
         self.train_workers_input.valueChanged.connect(self._save_training_config)
         epoch_layout.addRow("Train workers", self.train_workers_input)
+        self.train_batch_size_input = QSpinBox()
+        self.train_batch_size_input.setRange(1, 1_000_000)
+        self.train_batch_size_input.valueChanged.connect(self._save_training_config)
+        epoch_layout.addRow("Train batch size", self.train_batch_size_input)
+        self.train_persistent_workers_input = QCheckBox()
+        self.train_persistent_workers_input.toggled.connect(self._save_training_config)
+        epoch_layout.addRow("Persistent train workers", self.train_persistent_workers_input)
         self.val_workers_input = QSpinBox()
         self.val_workers_input.setRange(0, 1_000_000)
         self.val_workers_input.valueChanged.connect(self._save_training_config)
         epoch_layout.addRow("Validation workers", self.val_workers_input)
+        self.val_batch_size_input = QSpinBox()
+        self.val_batch_size_input.setRange(1, 1_000_000)
+        self.val_batch_size_input.valueChanged.connect(self._save_training_config)
+        epoch_layout.addRow("Validation batch size", self.val_batch_size_input)
+        self.val_persistent_workers_input = QCheckBox()
+        self.val_persistent_workers_input.toggled.connect(self._save_training_config)
+        epoch_layout.addRow(
+            "Persistent validation workers", self.val_persistent_workers_input
+        )
         self.epoch_group.hide()
         self.capture_table = QTableWidget()
         self.capture_table.setEditTriggers(QTableWidget.NoEditTriggers)
@@ -720,6 +736,10 @@ class CelineAutomationApp(QMainWindow):
                 )
             train_workers = train_dataloader.get("num_workers")
             val_workers = val_dataloader.get("num_workers")
+            train_batch_size = train_dataloader.get("batch_size")
+            val_batch_size = val_dataloader.get("batch_size")
+            train_persistent_workers = train_dataloader.get("persistent_workers", False)
+            val_persistent_workers = val_dataloader.get("persistent_workers", False)
             if (
                 isinstance(train_workers, bool)
                 or not isinstance(train_workers, int)
@@ -733,22 +753,58 @@ class CelineAutomationApp(QMainWindow):
                     "non-negative integers."
                 )
             if (
-                train_workers > self.train_workers_input.maximum()
-                or val_workers > self.val_workers_input.maximum()
+                isinstance(train_batch_size, bool)
+                or not isinstance(train_batch_size, int)
+                or isinstance(val_batch_size, bool)
+                or not isinstance(val_batch_size, int)
+                or train_batch_size < 1
+                or val_batch_size < 1
             ):
                 raise ValueError(
-                    f"learning_concat.json dataloader num_workers values must be between "
-                    f"0 and {self.train_workers_input.maximum()}."
+                    "learning_concat.json dataloader batch_size values must be "
+                    "positive integers."
+                )
+            if (
+                not isinstance(train_persistent_workers, bool)
+                or not isinstance(val_persistent_workers, bool)
+            ):
+                raise ValueError(
+                    "learning_concat.json dataloader persistent_workers values must "
+                    "be booleans."
+                )
+            if (
+                train_workers > self.train_workers_input.maximum()
+                or val_workers > self.val_workers_input.maximum()
+                or train_batch_size > self.train_batch_size_input.maximum()
+                or val_batch_size > self.val_batch_size_input.maximum()
+            ):
+                raise ValueError(
+                    "learning_concat.json dataloader num_workers and batch_size values "
+                    f"must be within the supported ranges (workers: 0 to "
+                    f"{self.train_workers_input.maximum()}, batch size: 1 to "
+                    f"{self.train_batch_size_input.maximum()})."
                 )
             self.epoch_input.blockSignals(True)
             self.train_workers_input.blockSignals(True)
+            self.train_batch_size_input.blockSignals(True)
+            self.train_persistent_workers_input.blockSignals(True)
             self.val_workers_input.blockSignals(True)
+            self.val_batch_size_input.blockSignals(True)
+            self.val_persistent_workers_input.blockSignals(True)
             self.epoch_input.setValue(max_epochs)
             self.train_workers_input.setValue(train_workers)
+            self.train_batch_size_input.setValue(train_batch_size)
+            self.train_persistent_workers_input.setChecked(train_persistent_workers)
             self.val_workers_input.setValue(val_workers)
+            self.val_batch_size_input.setValue(val_batch_size)
+            self.val_persistent_workers_input.setChecked(val_persistent_workers)
             self.epoch_input.blockSignals(False)
             self.train_workers_input.blockSignals(False)
+            self.train_batch_size_input.blockSignals(False)
+            self.train_persistent_workers_input.blockSignals(False)
             self.val_workers_input.blockSignals(False)
+            self.val_batch_size_input.blockSignals(False)
+            self.val_persistent_workers_input.blockSignals(False)
             self.epoch_group.show()
         except (OSError, json.JSONDecodeError, ValueError) as error:
             QMessageBox.warning(self, "Training config unreadable", str(error))
@@ -778,7 +834,15 @@ class CelineAutomationApp(QMainWindow):
                 trainer["max_epochs"] = max_epochs
             else:
                 train_dataloader["num_workers"] = self.train_workers_input.value()
+                train_dataloader["batch_size"] = self.train_batch_size_input.value()
+                train_dataloader["persistent_workers"] = (
+                    self.train_persistent_workers_input.isChecked()
+                )
                 val_dataloader["num_workers"] = self.val_workers_input.value()
+                val_dataloader["batch_size"] = self.val_batch_size_input.value()
+                val_dataloader["persistent_workers"] = (
+                    self.val_persistent_workers_input.isChecked()
+                )
             write_json(learning_path, learning_config)
         except (OSError, json.JSONDecodeError, ValueError) as error:
             QMessageBox.critical(self, "Training config update failed", str(error))
