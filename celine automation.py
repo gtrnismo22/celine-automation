@@ -167,10 +167,14 @@ def is_valid_capture(path):
 
 
 def nam_value_to_celine_input_db(value):
-    normalized = (value - NAM_KNOB_MIN) / (NAM_KNOB_MAX - NAM_KNOB_MIN)
-    return CELINE_INPUT_DB_MIN + normalized * (
-        CELINE_INPUT_DB_MAX - CELINE_INPUT_DB_MIN
+    return nam_value_to_celine_input_db_with_range(
+        value, CELINE_INPUT_DB_MIN, CELINE_INPUT_DB_MAX
     )
+
+
+def nam_value_to_celine_input_db_with_range(value, minimum, maximum):
+    normalized = (value - NAM_KNOB_MIN) / (NAM_KNOB_MAX - NAM_KNOB_MIN)
+    return minimum + normalized * (maximum - minimum)
 
 
 def is_celine_input_parameter(parameter_name):
@@ -196,11 +200,20 @@ def format_duration(seconds):
     return f"{minutes}:{seconds:02d}"
 
 
-def set_celine_parameter(parameter_name, parameter, value, is_nam_value=False):
+def set_celine_parameter(
+    parameter_name,
+    parameter,
+    value,
+    is_nam_value=False,
+    input_db_min=CELINE_INPUT_DB_MIN,
+    input_db_max=CELINE_INPUT_DB_MAX,
+):
     if is_celine_input_parameter(parameter_name):
         minimum, maximum, *_ = parameter.range
         actual_value = (
-            nam_value_to_celine_input_db(value)
+            nam_value_to_celine_input_db_with_range(
+                value, input_db_min, input_db_max
+            )
             if is_nam_value
             else value
         )
@@ -314,7 +327,8 @@ class CelineWorker(QObject):
             self.signals.error.emit(str(error))
 
     def _render(self):
-        plugin, project_dir, project, assignments = self.settings
+        plugin, project_dir, project, assignments, input_db_range = self.settings
+        input_db_min, input_db_max = input_db_range
         project["sample_rate"] = OUTPUT_SAMPLE_RATE
         entries = project["entries"]
         total = len(entries)
@@ -376,6 +390,8 @@ class CelineWorker(QObject):
                         plugin.parameters[assignment["parameter"]],
                         nam_value,
                         is_nam_value=True,
+                        input_db_min=input_db_min,
+                        input_db_max=input_db_max,
                     )
                 else:
                     set_celine_parameter(
@@ -456,6 +472,18 @@ class CelineAutomationApp(QMainWindow):
         self.plugin_parameters = []
         self.saved_setup = None
         self._updating_setup_table = False
+        self.input_db_min = QDoubleSpinBox()
+        self.input_db_min.setRange(-1000.0, 1000.0)
+        self.input_db_min.setDecimals(1)
+        self.input_db_min.setSingleStep(1.0)
+        self.input_db_min.setValue(CELINE_INPUT_DB_MIN)
+        self.input_db_min.valueChanged.connect(self._input_range_changed)
+        self.input_db_max = QDoubleSpinBox()
+        self.input_db_max.setRange(-1000.0, 1000.0)
+        self.input_db_max.setDecimals(1)
+        self.input_db_max.setSingleStep(1.0)
+        self.input_db_max.setValue(CELINE_INPUT_DB_MAX)
+        self.input_db_max.valueChanged.connect(self._input_range_changed)
         detected_vst = find_celine_vst3()
         self.vst_path = str(detected_vst) if detected_vst else None
         self.project_summary = QLabel("No project open.")
@@ -544,6 +572,10 @@ class CelineAutomationApp(QMainWindow):
         self.knob_count.setValue(0)
         self.knob_count.valueChanged.connect(self._limit_knob_rows)
         setup_actions.addWidget(self.knob_count)
+        setup_actions.addWidget(QLabel("Input range (dB)"))
+        setup_actions.addWidget(self.input_db_min)
+        setup_actions.addWidget(QLabel("to"))
+        setup_actions.addWidget(self.input_db_max)
         setup_actions.addStretch()
         setup_layout.addLayout(setup_actions)
         setup_layout.addWidget(
@@ -621,8 +653,10 @@ class CelineAutomationApp(QMainWindow):
         if setup_path.is_file():
             try:
                 self.saved_setup = json.loads(setup_path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError) as error:
+                self._apply_saved_input_range()
+            except (OSError, json.JSONDecodeError, ValueError) as error:
                 QMessageBox.warning(self, "Setup file unreadable", str(error))
+                self.saved_setup = None
         self._show_capture_table(project)
         if self.plugin_parameters:
             if self.saved_setup:
@@ -912,6 +946,7 @@ class CelineAutomationApp(QMainWindow):
 
     def _read_plugin_defaults(self):
         defaults = {}
+        input_db_min, input_db_max = self._get_input_db_range()
         for parameter_name in self.plugin_parameters:
             parameter = self.plugin.parameters[parameter_name]
             raw_value = float(parameter.raw_value)
@@ -919,14 +954,50 @@ class CelineAutomationApp(QMainWindow):
                 minimum, maximum, *_ = parameter.range
                 actual_value = float(minimum + raw_value * (maximum - minimum))
                 static_value = (
-                    actual_value - CELINE_INPUT_DB_MIN
-                ) / (CELINE_INPUT_DB_MAX - CELINE_INPUT_DB_MIN) * NAM_KNOB_MAX
+                    actual_value - input_db_min
+                ) / (input_db_max - input_db_min) * NAM_KNOB_MAX
             else:
                 static_value = raw_value * NAM_KNOB_MAX
             defaults[parameter_name] = max(
                 NAM_KNOB_MIN, min(NAM_KNOB_MAX, round(static_value, 1))
             )
         return defaults
+
+    def _get_input_db_range(self):
+        minimum = self.input_db_min.value()
+        maximum = self.input_db_max.value()
+        if maximum <= minimum:
+            raise ValueError("Celine input range maximum must be greater than its minimum.")
+        return minimum, maximum
+
+    def _input_range_changed(self, _value):
+        try:
+            self._get_input_db_range()
+        except ValueError as error:
+            self.status.setText(str(error))
+            return
+        self._save_setup()
+
+    def _apply_saved_input_range(self):
+        if not self.saved_setup:
+            return
+        if not isinstance(self.saved_setup, dict):
+            raise ValueError("Saved Celine setup must contain a JSON object.")
+        minimum = self.saved_setup.get("input_db_min", CELINE_INPUT_DB_MIN)
+        maximum = self.saved_setup.get("input_db_max", CELINE_INPUT_DB_MAX)
+        try:
+            minimum = float(minimum)
+            maximum = float(maximum)
+            if maximum <= minimum:
+                raise ValueError
+        except (TypeError, ValueError):
+            raise ValueError("Saved Celine input range is invalid.")
+        self.input_db_min.blockSignals(True)
+        self.input_db_max.blockSignals(True)
+        self.input_db_min.setValue(minimum)
+        self.input_db_max.setValue(maximum)
+        self.input_db_min.blockSignals(False)
+        self.input_db_max.blockSignals(False)
 
     def _limit_knob_rows(self, count):
         if self.plugin_parameters:
@@ -1006,6 +1077,7 @@ class CelineAutomationApp(QMainWindow):
     def _apply_saved_setup(self):
         if not self.saved_setup:
             return
+        self._apply_saved_input_range()
         self._updating_setup_table = True
         try:
             count = min(
@@ -1037,10 +1109,16 @@ class CelineAutomationApp(QMainWindow):
     def _save_setup(self):
         if self.project_dir is None or self._updating_setup_table:
             return
+        try:
+            self._get_input_db_range()
+        except ValueError:
+            return
         setup = {
-            "version": 1,
+            "version": 2,
             "plugin_path": self.vst_path,
             "parameter_count": self.knob_table.rowCount(),
+            "input_db_min": self.input_db_min.value(),
+            "input_db_max": self.input_db_max.value(),
             "parameters": [],
         }
         for row in range(self.knob_table.rowCount()):
@@ -1172,6 +1250,7 @@ class CelineAutomationApp(QMainWindow):
             return
         try:
             assignments = self._get_assignments()
+            input_db_range = self._get_input_db_range()
         except ValueError as error:
             QMessageBox.warning(self, "Invalid Celine setup", str(error))
             return
@@ -1181,7 +1260,9 @@ class CelineAutomationApp(QMainWindow):
         self._save_setup()
         self.status.setText("Rendering captures...")
         self.eta_status.setText("Estimated time remaining: calculating...")
-        self._run_worker((self.plugin, self.project_dir, self.project, assignments))
+        self._run_worker(
+            (self.plugin, self.project_dir, self.project, assignments, input_db_range)
+        )
 
     def _update_capture_progress(self, row, done, chunks, label):
         progress = self.capture_table.cellWidget(row, len(self.project["knobs"]) + 2)
